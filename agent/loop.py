@@ -1,7 +1,11 @@
+import json
+import tools.registry as reg
+from pathlib import Path
+from datetime import datetime
 from llm.client import LLM
 from tools.definitions import tools
 from security.permissions import check_permission
-import tools.registry as reg
+from security.audit import log_event
 
 class Agent:
     def __init__(self):
@@ -16,6 +20,16 @@ class Agent:
             If a tool returns "Permission denied", stop the action and inform the user clearly.
             """
         }]
+
+    def save_msg(self):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = Path("conversations") / f"conversation-{timestamp}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        with path.open("w") as f:
+            json.dump(self.messages, f, indent=4, ensure_ascii=False)
+
+        return path
 
     def run(self, user_input):
         self.messages.append({
@@ -67,7 +81,13 @@ class Agent:
 
                 print(f"\n[Executing: {name}]")
                 if check_permission(name, args):
-                    result = reg.execute_tool(name, args)
+                    try:
+                        result = reg.execute_tool(name, args)
+                        log_event("SUCCESS", f"Tool: {name}")
+
+                    except Exception as e:
+                        result = f"Tool execution failed: {e}"
+                        log_event("FAILED", f"Tool: {name}, Error: {e}")
                 else:
                     result = "Permission denied"
 
